@@ -1,62 +1,64 @@
 # Recall Agent — System Architecture & Design
 
-## 1. Problem & Core Idea
-Conversational AI assistants suffer from **context amnesia** (forgetting decisions across sessions) and **knowledge stagnation** (outdated cutoffs for live facts). Existing solutions rely on heavy vector databases and complex agent graphs. 
-
-**Recall** solves this using a lightweight, deterministic architecture: local embedded **SQLite with FTS5** for historical and full-text keyword memory, combined with **Google Gemini native tool calling** for bounded, grounded web research via **Tavily**.
+## 1. Problem Recall Solves
+Conversational AI assistants suffer from **context amnesia** (forgetting architectural decisions and constraints across sessions) and **knowledge stagnation** (asserting stale training data for live facts like pricing or library releases). Existing solutions introduce heavy infrastructure (vector databases, embedding pipelines, multi-agent frameworks) that adds latency, non-deterministic retrieval, and operational bloat. Recall solves this with a lightweight, deterministic system: local embedded storage combined with grounded, autonomous web search.
 
 ---
 
-## 2. System Architecture & Flow
+## 2. Main System Data Flow
 
 ```text
-User Request ──► Fastify Server (:3000) ──► Chat Orchestrator (src/agent/chat.ts)
-                                                      │
-     ┌────────────────────────────────────────────────┴───────────────────────────────┐
-     ▼                                                                                ▼
-1. Build Context (Prior to insert)                                        2. Persist User Message
-   ├── Recent dialogue (last 6 messages)                                     (Guarantees durability)
-   ├── FTS5 BM25 search (messages_fts OR-ranked)
-   ├── Date-specific filter (date(created_at) = date(?))
-   └── Structured memories (conversational & cross-session)
+User Request ──► Fastify HTTP Server (:3000) ──► Chat Orchestrator (src/agent/chat.ts)
+                                                        │
+     ┌──────────────────────────────────────────────────┴────────────────────────────────┐
+     ▼                                                                                   ▼
+1. Assemble Context (Before Insert)                                          2. Persist User Message
+   ├── Recent dialogue (last 6 messages)                                        (Ensures durability)
+   ├── SQLite FTS5 BM25 search (messages_fts OR-ranked)
+   ├── Calendar-date retrieval (date(created_at) = date(?))
+   └── Structured memories (local thread + cross-conversation)
      │
      ▼
-3. Gemini Model Turn Loop (Max 5 Model Turns, Max 3 Searches)
-   ├── Autonomous decision: answer directly vs call web_search
-   ├── Input validation & duplicate query suppression
-   ├── Tavily Search: sanitize URLs, extract domains, assign stable [1], [2] citations
-   └── Final answer synthesis with bracketed citations
+3. Gemini Execution Loop (Max 5 Model Turns, Max 3 Tavily Searches)
+   ├── Autonomous tool decision (direct answer vs web_search call)
+   ├── Tool execution: Tavily search, URL deduplication, stable [1], [2] citation indices
+   └── Grounded final answer synthesis referencing citation numbers
      │
      ▼
 4. Response & Post-Turn Processing
-   ├── Persist assistant message with citations
-   └── Asynchronous structured memory extraction (facts, decisions, preferences, constraints)
+   ├── Persist assistant reply with citations to SQLite
+   └── Asynchronously extract structured memories (facts, decisions, preferences, constraints)
 ```
 
 ---
 
-## 3. Key Design Decisions & Rationale
+## 3. Technology Selection & Rationale
 
-| Decision | Rationale | Alternatives Considered & Rejected |
-| :--- | :--- | :--- |
-| **Fastify + TypeScript** | High throughput, sub-millisecond overhead, built-in schema validation, strict type safety. | Express (slower, older), NestJS (heavy OOP boilerplate). |
-| **SQLite with FTS5** | Zero external infrastructure, ACID reliability, embedded sub-ms latency, deterministic BM25 keyword recall. | Pinecone / Chroma / Vector DBs (high latency, embedding drift, cost). |
-| **Gemini Native Tool Calling** | First-party schema declaration; model autonomously activates tools based on need. | ReAct regex prompt parsing, LangChain agent executors (fragile, bloated). |
-| **Tavily Search** | Clean, search-engine API purpose-built for LLM grounding with extracted publication dates. | Google Custom Search (complex provisioning), Puppeteer scraping (slow, brittle). |
-| **Dual Loop Bounds** | Bounded at max 3 Tavily searches and max 5 Gemini model turns with safe fallbacks. | Unbounded tool loops, open multi-agent frameworks (infinite recursion risk). |
+- **Fastify & TypeScript**: Low-overhead HTTP routing, native schema validation with Zod, and compile-time type safety.
+- **SQLite with FTS5**: Zero external infrastructure, ACID durability, embedded sub-millisecond query speed, and deterministic BM25 keyword ranking via `messages_fts`.
+- **Google Gemini (`gemini-2.5-flash`)**: First-party SDK with native function calling. The model autonomously decides when search is necessary based on query semantics.
+- **Tavily Search API**: Purpose-built for LLM grounding; returns structured snippets, domain metadata, and publication dates without scraping boilerplate.
 
 ---
 
-## 4. Reliability & Failure Handling
-- **Persistence-First Durability**: User messages are stored in SQLite before any external API calls, ensuring zero message loss on LLM failure.
-- **Graceful Search Degradation**: Tavily timeouts or 429 quota limits return empty results gracefully; Gemini discloses missing live verification rather than hallucinating.
-- **Sequential Citation Stability**: Global citation indices (`[1]`, `[2]`) remain stable across repeated or multi-turn searches, aligning tool outputs with final source arrays.
-- **Safe Fallback**: Model turn limits return a safe synthesis rather than crashing or looping indefinitely.
+## 4. Rejected Alternatives
+
+- **Vector Databases (Pinecone, Chroma, Milvus)**: Rejected because embedding models introduce non-deterministic retrieval, semantic drift on exact technical identifiers (e.g., error codes, library versions, model names), network latency, and unnecessary cloud hosting dependencies.
+- **LangChain & LangGraph**: Rejected due to high abstraction bloat, rapid API churn, opaque execution flow, and debugging difficulty. A clean native loop provides complete control over tool execution bounds, query deduplication, and error recovery.
 
 ---
 
-## 5. Limitations & Future Improvements
-- **Contradiction Resolution**: Add `superseded_by` pointers in SQLite to automatically invalidate outdated facts when updated.
-- **Hybrid Retrieval**: Complement FTS5 BM25 with local `sqlite-vss` embeddings for semantic synonym matching without cloud vector DBs.
-- **Multi-Tenancy**: Add `user_id` partitioning across message history and memory retrieval.
-- **Streaming**: Implement Server-Sent Events (SSE) for word-by-word streaming responses.
+## 5. How Conversational Memory and Web Research Work Together
+Memory and research operate as complementary stages in a single turn:
+1. **Memory First**: The orchestrator queries SQLite to recover user constraints, decisions, and past dialogue (e.g., *"We chose Fastify and PostgreSQL"*).
+2. **Context-Grounded Research**: Gemini receives this context and evaluates whether live facts are required (e.g., *"What is the latest stable version of Fastify?"*).
+3. **Synthesis & Distinction**: The model combines historical decisions with live research, citing web sources with stable bracketed markers (`[1]`) while preserving past constraints.
+4. **Memory Capture**: The turn concludes by asynchronously extracting new facts or decisions from the dialogue into SQLite without blocking response latency.
+
+---
+
+## 6. What Would Be Improved With Another Week of Development
+- **Contradiction Invalidation**: Add `superseded_by` pointers in the `memories` table to automatically invalidate outdated decisions when newer contradictory choices are recorded.
+- **Hybrid Retrieval**: Supplement FTS5 BM25 with local `sqlite-vss` embeddings for semantic synonym matching without external vector services.
+- **Response Streaming**: Implement Server-Sent Events (SSE) on `/conversations/:id/chat` for token-by-token streaming.
+- **User Identity & Multi-Tenancy**: Add `user_id` foreign keys to isolate conversation threads and memory namespaces across multiple users.

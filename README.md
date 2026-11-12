@@ -150,9 +150,9 @@ recall-agent/
 │   ├── package.json
 │   └── vite.config.ts         # Proxies /conversations, /search, /health to :3000
 ├── tests/                     # Automated unit and integration test suites
-│   ├── memory.test.ts         # Phase 2 database & FTS5 tests (14 tests)
-│   ├── phase3.test.ts         # Phase 3 context & memory extraction tests (8 tests)
-│   ├── phase4.test.ts         # Phase 4 tool loop & citation tests (7 tests)
+│   ├── memory.test.ts         # Phase 2 database & FTS5 tests (8 tests)
+│   ├── phase3.test.ts         # Phase 3 context & memory extraction tests (11 tests)
+│   ├── phase4.test.ts         # Phase 4 tool loop & citation tests (14 tests)
 │   └── phase5.test.ts         # Phase 5 reliability & benchmark tests (7 tests)
 ├── .env.example               # Template for environment variables
 ├── .gitignore                 # Ignored files (node_modules, .env, data/*.db)
@@ -166,53 +166,61 @@ recall-agent/
 
 ## 6. Prerequisites
 
-- **Node.js**: `v18.0.0` or higher (verified on Node.js `v20+`).
+- **Node.js**: `v20.0.0` or higher.
 - **npm**: `v9.0.0` or higher.
-- **Google Gemini API Key**: Free tier available from [Google AI Studio](https://aistudio.google.com/).
-- **Tavily API Key**: Free tier (1,000 requests/month) from [Tavily](https://tavily.com/).
+- **Google Gemini API Key** *(optional for offline tests & Demo Mode)*: From [Google AI Studio](https://aistudio.google.com/).
+- **Tavily API Key** *(optional for offline tests & Demo Mode)*: From [Tavily](https://tavily.com/).
 
 ---
 
 ## 7. Installation Instructions
 
+Follow these steps for a clean clone setup:
+
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/your-username/recall-agent.git
-   cd recall-agent
+   git clone https://github.com/Som-0619/Recall-Agent.git
+   cd Recall-Agent
    ```
 
-2. **Install dependencies**:
+2. **Install backend dependencies**:
    ```bash
    npm install
+   ```
+
+3. **Install frontend dependencies**:
+   ```bash
+   npm --prefix frontend install
    ```
 
 ---
 
 ## 8. Environment Configuration
 
-Copy the example environment file:
+The backend starts and offline tests run without any API keys configured. API keys are validated only when live Gemini generation or live Tavily web search is executed.
 
-```bash
-cp .env.example .env
-```
+1. Create a `.env` file from the example template:
+   ```bash
+   cp .env.example .env
+   ```
 
-Edit `.env` with your preferred editor and provide your API keys:
-
-```env
-PORT=3000
-GEMINI_API_KEY=AIzaSyYourGeminiApiKeyHere
-TAVILY_API_KEY=tvly-yourTavilyApiKeyHere
-MODEL_NAME=gemini-2.5-flash
-DATABASE_PATH=./data/recall.db
-```
+2. *(Optional)* Add your credentials to `.env`:
+   ```env
+   PORT=3000
+   GEMINI_API_KEY=your_gemini_api_key_here
+   TAVILY_API_KEY=your_tavily_api_key_here
+   MODEL_NAME=gemini-2.5-flash
+   DATABASE_PATH=./data/recall.db
+   ```
+   > **Security Note**: Never commit your `.env` file. It is explicitly ignored by `.gitignore`.
 
 ### Environment Variables Explained
 
 | Variable | Required | Default | Description |
 | :--- | :---: | :---: | :--- |
 | `PORT` | No | `3000` | Port for the Fastify HTTP server |
-| `GEMINI_API_KEY`| Yes | — | API key for Google Gemini LLM API |
-| `TAVILY_API_KEY`| Yes | — | API key for Tavily Web Search API |
+| `GEMINI_API_KEY`| No (Live mode only) | `""` | Google Gemini API key (validated only when live generation is invoked) |
+| `TAVILY_API_KEY`| No (Live mode only) | `""` | Tavily Search API key (validated only when live web search is invoked) |
 | `MODEL_NAME` | No | `gemini-2.5-flash` | Gemini model identifier |
 | `DATABASE_PATH` | No | `./data/recall.db` | Relative or absolute path to SQLite file |
 
@@ -220,7 +228,7 @@ DATABASE_PATH=./data/recall.db
 
 ## 9. How to Run Locally
 
-### Start Backend Development Server
+### Start Backend Server
 Starts the Fastify backend server on port 3000 with auto-reload using `tsx`:
 ```bash
 npm run dev
@@ -234,40 +242,57 @@ npm run client
 ```
 Open **`http://localhost:5173`** in your browser.
 
-> [!TIP]
-> **Zero API Keys Required for Testing**: The frontend includes a built-in **Demo Mode** toggle in the sidebar. You can explore conversation memory, live search citation cards, and real-time structured memory extraction immediately with zero API keys or backend setup!
+---
 
-### Build for Production
-Compiles backend TypeScript into `dist/` and frontend into `frontend/dist/`:
-```bash
-npm run build         # Backend build
-npm run build:client  # Frontend build
-```
+### Understanding App Modes: Demo Mode vs. Live Mode
 
-### Run Production Server
-Executes the compiled backend production build:
+The frontend includes a toggle in the sidebar between two distinct execution modes:
+
+1. **Demo Mode (Simulated — Zero API Keys Required)**:
+   - Uses simulated client-side logic to demonstrate memory extraction, historical recall, and web research grounding.
+   - Shows sample architectural decisions, past dialogue, and mock citations `[1]`, `[2]`.
+   - Simulated responses are clearly flagged with `[SIMULATED RESPONSE]` so they are never confused with real AI output.
+   - Operates completely offline without requiring credentials or a running backend.
+
+2. **Live Backend Mode (Real AI & Storage)**:
+   - Connects to the Fastify server at `http://localhost:3000`.
+   - Persists all dialogue and memories in local SQLite tables.
+   - Performs actual FTS5 BM25 message searches.
+   - Requires valid `GEMINI_API_KEY` (and `TAVILY_API_KEY` for live web queries).
+
+---
+
+### Build and Run for Production
+
 ```bash
+# 1. Compile backend TypeScript into dist/
+npm run build
+
+# 2. Compile frontend assets into frontend/dist/
+npm run build:client
+
+# 3. Start production backend server
 npm start
 ```
 
-### Run Type Checking
+### Type Checking
 Validates TypeScript types without emitting build artifacts:
 ```bash
 npm run typecheck
 ```
 
-### Run Automated Tests
-Runs all 36 unit and integration tests (uses mocked external APIs; zero API cost):
-```bash
-npm test
-```
+---
 
-### Run Evaluation Benchmarks
-Executes the 24-case evaluation suite and calculates benchmark scores:
-```bash
-npm run evaluate
-```
-> **Note**: Evaluation benchmarks use deterministic mocked external APIs to verify context assembly, FTS5 message retrieval, bounded tool calling, and failure recovery without incurring external API costs. These results measure pipeline correctness and deterministic retrieval rather than live model accuracy.
+### Testing: Offline Unit Tests vs. Live Tests
+
+- **Offline Automated Tests (`npm test`)**: Runs all 40 unit and integration tests using mocked external API clients. Requires **zero** API keys and makes zero external network requests:
+  ```bash
+  npm test
+  ```
+- **Offline Benchmark Evaluation (`npm run evaluate`)**: Runs the 24 evaluation scenarios through Recall's actual context assembly and bounded tool loop using controlled test doubles:
+  ```bash
+  npm run evaluate
+  ```
 
 ---
 
@@ -410,11 +435,11 @@ Recall uses a 5-tier context assembly pipeline before calling Gemini:
 ```bash
 npm test
 ```
-Runs 36 unit and integration tests across 4 test suites:
-- `tests/memory.test.ts`: Tests SQLite initialization, conversation CRUD, message persistence, FTS5 triggers, and structured memory storage.
-- `tests/phase3.test.ts`: Tests context construction, duplicate filtering, date extraction, and structured memory extraction.
-- `tests/phase4.test.ts`: Tests Tavily tool integration, search depth defaults, URL extraction, bounded tool loop (max 3), and source metadata.
-- `tests/phase5.test.ts`: Tests cross-conversation retrieval, date filtering, 429 rate limit handling, and duplicate query rejection.
+Runs all 40 unit and integration tests across 4 test suites (100% offline, zero API calls):
+- `tests/memory.test.ts`: Tests SQLite initialization, conversation CRUD, message persistence, FTS5 triggers, and structured memory storage (8 tests).
+- `tests/phase3.test.ts`: Tests context construction, duplicate filtering, date extraction, structured memory extraction, and zero prompt duplication (11 tests).
+- `tests/phase4.test.ts`: Tests Tavily tool integration, URL extraction, bounded tool loop (max 3 searches, max 5 model turns), stable sequential citations, and credential validation (14 tests).
+- `tests/phase5.test.ts`: Tests cross-conversation retrieval, date filtering, 429 rate limit handling, and duplicate query rejection (7 tests).
 
 ### Evaluation Benchmark
 ```bash

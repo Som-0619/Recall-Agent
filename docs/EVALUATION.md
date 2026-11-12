@@ -64,6 +64,30 @@ Metrics are tracked and calculated by [`src/evaluation/metrics.ts`](../src/evalu
 | **historical_vs_current** | 4 / 4 | 100% |
 | **failure_scenarios** | 4 / 4 | 100% |
 
+### Metric Definitions & Scope of Measurement
+
+The benchmark metrics reflect controlled deterministic test results using test doubles rather than unconstrained live model accuracy:
+
+1. **Memory Retrieval Accuracy (100%)**:
+   - *What it measures*: Percentage of memory test cases where `buildConversationContext()` successfully pulled the target historical fact or decision into the context buffer from SQLite.
+   - *Limitation*: Verifies context presence and token inclusion in the prompt; it does not measure whether an unconstrained live model will attend to those tokens in very long contexts.
+
+2. **Answer Correctness (100%)**:
+   - *What it measures*: Verification that synthesized responses contain the required factual strings and exclude forbidden/hallucinated terms specified in `dataset.ts`.
+   - *Limitation*: Evaluates deterministic response pipelines in controlled test scenarios. Real-world model outputs with live LLMs exhibit linguistic variance.
+
+3. **Date-Specific Accuracy (100%)**:
+   - *What it measures*: Verification that date queries (`getMessagesByDate`) correctly isolate and retrieve messages matching the calendar date (ISO and formatted text dates) while excluding surrounding dates.
+   - *Limitation*: Uses regex date detection (`YYYY-MM-DD` and standard textual dates like *"November 5, 2026"*). Relative conversational references (*"three days before our launch"*) require LLM-driven date resolution.
+
+4. **Citation Correctness (100%)**:
+   - *What it measures*: Ensures that responses requiring web research contain bracketed citations (`[1]`, `[2]`) that correspond to indexed items in the structured `sources` array.
+   - *Limitation*: Measures structural citation integrity and index alignment; it does not verify whether the live external URL remains active or factual over time.
+
+5. **Search Decision Accuracy (100%)**:
+   - *What it measures*: Verifies whether the tool loop calls `web_search` when real-world updates are requested, and suppresses search when queries are purely conceptual or answered from local memory.
+   - *Limitation*: Evaluates tool-calling decisions under test fixtures.
+
 ---
 
 ## 4. Bugs Discovered & Targeted Improvements Implemented
@@ -107,7 +131,7 @@ During evaluation and benchmarking, five key reliability gaps were identified an
 
 ## 6. How to Reproduce the Evaluation
 
-### Run Full Automated Test Suite (36 Tests)
+### Run Full Automated Test Suite (40 Tests)
 ```bash
 npm test
 ```
